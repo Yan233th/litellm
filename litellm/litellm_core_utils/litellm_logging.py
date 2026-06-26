@@ -4922,6 +4922,21 @@ def is_valid_sha256_hash(value: str) -> bool:
     return bool(re.fullmatch(r"[a-fA-F0-9]{64}", value))
 
 
+def redact_mcp_tool_call_arguments(
+    mcp_tool_call_metadata: Optional[StandardLoggingMCPToolCall],
+) -> Optional[StandardLoggingMCPToolCall]:
+    """Return a copy of the MCP tool-call metadata without the caller-supplied
+    ``arguments`` (the tool input), which can hold sensitive data and must never
+    reach a log sink. The original object is left intact so guardrails and cost
+    tracking can still read the input."""
+    if not mcp_tool_call_metadata or "arguments" not in mcp_tool_call_metadata:
+        return mcp_tool_call_metadata
+    return cast(
+        StandardLoggingMCPToolCall,
+        {k: v for k, v in mcp_tool_call_metadata.items() if k != "arguments"},
+    )
+
+
 class StandardLoggingPayloadSetup:
     @staticmethod
     def cleanup_timestamps(
@@ -5158,6 +5173,9 @@ class StandardLoggingPayloadSetup:
             if cold_storage_object_key:
                 clean_metadata["cold_storage_object_key"] = cold_storage_object_key
 
+        clean_metadata["mcp_tool_call_metadata"] = redact_mcp_tool_call_arguments(
+            clean_metadata.get("mcp_tool_call_metadata")
+        )
         return clean_metadata
 
     @staticmethod
@@ -6034,6 +6052,9 @@ def get_standard_logging_metadata(
                 clean_metadata["user_api_key_hash"] = metadata.get(
                     "user_api_key"
                 )  # this is the hash
+    clean_metadata["mcp_tool_call_metadata"] = redact_mcp_tool_call_arguments(
+        clean_metadata.get("mcp_tool_call_metadata")
+    )
     return clean_metadata
 
 

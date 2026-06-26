@@ -3449,3 +3449,67 @@ def test_failure_handler_zeroes_spend_without_recovered_usage(logging_obj):
     assert payload["status"] == "failure"
     assert payload["response_cost"] == 0
     assert payload["total_tokens"] == 0
+
+
+def _mcp_tool_call_metadata():
+    return {
+        "name": "search",
+        "arguments": {"query": "social security number 123-45-6789"},
+        "result": {"content": "redacted-result-stays"},
+        "mcp_server_name": "deepwiki-mcp",
+        "namespaced_tool_name": "deepwiki-mcp/search",
+    }
+
+
+def test_redact_mcp_tool_call_arguments_strips_input_without_mutating_source():
+    from litellm.litellm_core_utils.litellm_logging import (
+        redact_mcp_tool_call_arguments,
+    )
+
+    source = _mcp_tool_call_metadata()
+    redacted = redact_mcp_tool_call_arguments(source)
+
+    assert redacted is not None
+    assert "arguments" not in redacted
+    assert redacted["name"] == "search"
+    assert redacted["namespaced_tool_name"] == "deepwiki-mcp/search"
+    assert redacted["result"] == {"content": "redacted-result-stays"}
+    # the live object that guardrails / cost tracking read from is untouched
+    assert source["arguments"] == {"query": "social security number 123-45-6789"}
+
+
+def test_redact_mcp_tool_call_arguments_handles_none():
+    from litellm.litellm_core_utils.litellm_logging import (
+        redact_mcp_tool_call_arguments,
+    )
+
+    assert redact_mcp_tool_call_arguments(None) is None
+
+
+def test_standard_logging_metadata_excludes_mcp_arguments():
+    from litellm.litellm_core_utils.litellm_logging import StandardLoggingPayloadSetup
+
+    mcp_metadata = _mcp_tool_call_metadata()
+    clean = StandardLoggingPayloadSetup.get_standard_logging_metadata(
+        metadata=None,
+        mcp_tool_call_metadata=mcp_metadata,
+    )
+
+    logged_mcp = clean["mcp_tool_call_metadata"]
+    assert logged_mcp is not None
+    assert "arguments" not in logged_mcp
+    assert logged_mcp["name"] == "search"
+    assert logged_mcp["namespaced_tool_name"] == "deepwiki-mcp/search"
+
+
+def test_module_level_standard_logging_metadata_excludes_mcp_arguments():
+    from litellm.litellm_core_utils.litellm_logging import get_standard_logging_metadata
+
+    clean = get_standard_logging_metadata(
+        metadata={"mcp_tool_call_metadata": _mcp_tool_call_metadata()}
+    )
+
+    logged_mcp = clean["mcp_tool_call_metadata"]
+    assert logged_mcp is not None
+    assert "arguments" not in logged_mcp
+    assert logged_mcp["name"] == "search"
